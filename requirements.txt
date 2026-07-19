@@ -1,0 +1,4 @@
+inky
+requests
+font-fredoka-one
+Pillow

@@ -1,0 +1,12 @@
+[Unit]
+Description=Inky pHAT weather dashboard update
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=__RUN_USER__
+WorkingDirectory=__REPO_DIR__
+ExecStart=__VENV_DIR__/bin/python __REPO_DIR__/dashboard.py
+# Give the network a moment on boot before failing.
+TimeoutStartSec=120
