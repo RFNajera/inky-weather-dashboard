@@ -122,25 +122,6 @@ def aqi_label(aqi):
     return "Hazard"
 
 
-def aqi_dot_colour(aqi, black, white, accent):
-    """
-    Map AQI to the panel's limited palette (white / black / one accent).
-    The accent index is red OR yellow depending on the board, so it is
-    reserved for genuinely unhealthy air to keep its meaning clear:
-      Good        -> hollow (white fill, black ring)
-      Moderate    -> black filled (present but not alarming)
-      Unhealthy+  -> accent filled with black ring (the alarm colour)
-    Returns (fill, outline).
-    """
-    if aqi is None:
-        return white, black
-    if aqi <= 50:
-        return white, black          # Good: hollow
-    if aqi <= 100:
-        return black, black          # Moderate: neutral, filled black
-    return accent, black             # Unhealthy and worse: accent + ring
-
-
 # ----------------------------------------------------------------------------
 # Data fetching
 # ----------------------------------------------------------------------------
@@ -152,8 +133,9 @@ def fetch_weather():
         f"?latitude={LATITUDE}&longitude={LONGITUDE}"
         "&current=temperature_2m,weather_code,is_day"
         "&daily=temperature_2m_max,temperature_2m_min"
+        "&hourly=precipitation_probability"
         "&temperature_unit=fahrenheit"
-        f"&timezone={TIMEZONE}&forecast_days=1"
+        f"&timezone={TIMEZONE}&forecast_days=2"
     )
     try:
         r = requests.get(url, timeout=HTTP_TIMEOUT)
@@ -172,11 +154,28 @@ def fetch_weather():
             "is_day": cur.get("is_day", 1),
             "high_f": first("temperature_2m_max"),
             "low_f": first("temperature_2m_min"),
+            "rain_pct": _max_precip_next_hours(data.get("hourly", {}), 12),
         }
     except Exception as e:
         log.warning("Weather fetch failed: %s", e)
         return {"temp_f": None, "code": None, "is_day": 1,
-                "high_f": None, "low_f": None}
+                "high_f": None, "low_f": None, "rain_pct": None}
+
+
+def _max_precip_next_hours(hourly, hours):
+    """Max precipitation probability (%) over the next `hours` from now."""
+    times = hourly.get("time") or []
+    probs = hourly.get("precipitation_probability") or []
+    if not times or not probs:
+        return None
+    now_key = datetime.now().strftime("%Y-%m-%dT%H:00")
+    start = 0
+    for i, t in enumerate(times):
+        if t >= now_key:
+            start = i
+            break
+    window = [p for p in probs[start:start + hours] if p is not None]
+    return max(window) if window else None
 
 
 def fetch_aqi():
@@ -210,6 +209,7 @@ def build_content():
     wx = fetch_weather()
     temp_f, code, is_day = wx["temp_f"], wx["code"], wx["is_day"]
     high_f, low_f = wx["high_f"], wx["low_f"]
+    rain_pct = wx["rain_pct"]
 
     if temp_f is not None:
         weather_line = f"{wmo_label(code)} {round(temp_f)}\u00b0F"
@@ -235,7 +235,7 @@ def build_content():
         "lines": [line1, weather_line, hl_line, aqi_line],
         "icon": icon,
         "is_day": bool(is_day),
-        "aqi": aqi,
+        "rain_pct": rain_pct,
     }
 
 
@@ -374,7 +374,7 @@ def render(content):
     lines = content["lines"]
     font_size = 14 if height <= 104 else 15
     font = load_font(font_size)
-    small_font = load_font(11)
+    small_font = load_font(12)
 
     # ---- Columns -----------------------------------------------------------
     text_w = int(width * TEXT_FRACTION)
@@ -396,29 +396,25 @@ def render(content):
     draw.line((text_w - 2, 6, text_w - 2, height - 6), fill=BLACK, width=1)
 
     # ---- Icon (upper part of the right column) -----------------------------
-    # Reserve a strip at the bottom of the icon column for the AQI dot.
-    dot_strip = 26
+    # Reserve a strip at the bottom of the icon column for the rain-chance line.
+    rain_strip = 24
     draw_icon(
         draw,
         (icon_region[0] + 4, icon_region[1] + 2,
-         icon_region[2] - 4, icon_region[3] - dot_strip),
+         icon_region[2] - 4, icon_region[3] - rain_strip),
         content["icon"],
         content["is_day"],
         BLACK, WHITE, ACCENT,
     )
 
-    # ---- AQI colour dot (bottom of the right column) -----------------------
-    aqi = content.get("aqi")
-    fill, outline = aqi_dot_colour(aqi, BLACK, WHITE, ACCENT)
+    # ---- Rain chance (next 12h) at the bottom of the right column ----------
+    rain_pct = content.get("rain_pct")
+    rain_text = f"Rain {rain_pct}%" if rain_pct is not None else "Rain --%"
     icon_cx = (icon_region[0] + icon_region[2]) // 2
-    dot_cy = height - dot_strip // 2 - 1
-    rr = 6
-    draw.ellipse(
-        (icon_cx - rr - 14, dot_cy - rr, icon_cx - 14 + rr, dot_cy + rr),
-        fill=fill, outline=outline, width=2,
-    )
-    # "AQI" caption to the right of the dot.
-    draw.text((icon_cx - 2, dot_cy - 7), "AQI", BLACK, font=small_font)
+    bbox = draw.textbbox((0, 0), rain_text, font=small_font)
+    tw = bbox[2] - bbox[0]
+    rain_y = height - rain_strip + 4
+    draw.text((icon_cx - tw // 2, rain_y), rain_text, BLACK, font=small_font)
 
     inky.set_image(img)
     inky.set_border(WHITE)

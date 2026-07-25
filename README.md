@@ -7,18 +7,22 @@ red/yellow/black/white, 250×122) driven by a **Raspberry Pi Zero W** running
 It refreshes **every hour at :15**, pausing overnight **between 11:00 PM and
 5:00 AM**. The screen is split into two columns:
 
-**Left ~2/3 — three text lines:**
+**Left ~2/3 — four text lines:**
 
 1. Date and time (24-hour clock)
 2. Current weather conditions + temperature for **Mt. Airy, Maryland**
-3. Air Quality Index (US AQI)
+3. Today's high / low
+4. Air Quality Index (US AQI)
 
-**Right ~1/3 — a weather-state icon**, drawn programmatically (no image files):
+**Right ~1/3 — a weather-state icon + rain chance**, drawn programmatically
+(no image files):
 
 - **Sun** for daytime clear, **crescent moon** for night
 - Cloud / partly-cloudy / rain / snow / lightning / fog overlays based on
   conditions, using the board's accent colour (red/yellow) for the sun and
   precipitation accents
+- **Rain %** under the icon — the highest chance of precipitation over the
+  next 12 hours
 
 Weather and air-quality data come from the free [Open-Meteo](https://open-meteo.com)
 APIs — **no API key required**.
