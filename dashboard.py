@@ -114,12 +114,29 @@ def aqi_label(aqi):
     if aqi <= 100:
         return "Moderate"
     if aqi <= 150:
-        return "Unhlthy SG"
+        return "Unhlthy-SG"
     if aqi <= 200:
-        return "Unhealthy"
+        return "Unhlthy"
     if aqi <= 300:
-        return "V.Unhlthy"
-    return "Hazardous"
+        return "V.Bad"
+    return "Hazard"
+
+
+def aqi_dot_colour(aqi, black, white, accent):
+    """
+    Map AQI to one of the panel's colours (limited palette):
+      Good        -> white disc with black outline (clean/low)
+      Moderate    -> accent (yellow on a yellow board, red otherwise)
+      Unhealthy+  -> accent, filled solid
+    Returns (fill, outline).
+    """
+    if aqi is None:
+        return white, black
+    if aqi <= 50:
+        return white, black          # Good: hollow
+    if aqi <= 100:
+        return accent, accent        # Moderate: filled accent
+    return accent, black             # Unhealthy and worse: filled accent + ring
 
 
 # ----------------------------------------------------------------------------
@@ -127,26 +144,37 @@ def aqi_label(aqi):
 # ----------------------------------------------------------------------------
 
 def fetch_weather():
-    """Return (temp_f, weather_code, is_day) or (None, None, 1) on failure."""
+    """Return dict with temp_f, code, is_day, high_f, low_f (values may be None)."""
     url = (
         "https://api.open-meteo.com/v1/forecast"
         f"?latitude={LATITUDE}&longitude={LONGITUDE}"
         "&current=temperature_2m,weather_code,is_day"
+        "&daily=temperature_2m_max,temperature_2m_min"
         "&temperature_unit=fahrenheit"
-        f"&timezone={TIMEZONE}"
+        f"&timezone={TIMEZONE}&forecast_days=1"
     )
     try:
         r = requests.get(url, timeout=HTTP_TIMEOUT)
         r.raise_for_status()
-        cur = r.json().get("current", {})
-        return (
-            cur.get("temperature_2m"),
-            cur.get("weather_code"),
-            cur.get("is_day", 1),
-        )
+        data = r.json()
+        cur = data.get("current", {})
+        daily = data.get("daily", {})
+
+        def first(key):
+            vals = daily.get(key)
+            return vals[0] if isinstance(vals, list) and vals else None
+
+        return {
+            "temp_f": cur.get("temperature_2m"),
+            "code": cur.get("weather_code"),
+            "is_day": cur.get("is_day", 1),
+            "high_f": first("temperature_2m_max"),
+            "low_f": first("temperature_2m_min"),
+        }
     except Exception as e:
         log.warning("Weather fetch failed: %s", e)
-        return None, None, 1
+        return {"temp_f": None, "code": None, "is_day": 1,
+                "high_f": None, "low_f": None}
 
 
 def fetch_aqi():
@@ -177,13 +205,21 @@ def build_content():
     # 24-hour time keeps the top line narrow (no AM/PM).
     time_line = now.strftime("%H:%M")
 
-    temp_f, code, is_day = fetch_weather()
+    wx = fetch_weather()
+    temp_f, code, is_day = wx["temp_f"], wx["code"], wx["is_day"]
+    high_f, low_f = wx["high_f"], wx["low_f"]
+
     if temp_f is not None:
         weather_line = f"{wmo_label(code)} {round(temp_f)}\u00b0F"
         icon = wmo_icon(code)
     else:
         weather_line = "Weather n/a"
         icon = "cloudy"
+
+    if high_f is not None and low_f is not None:
+        hl_line = f"H {round(high_f)}\u00b0 L {round(low_f)}\u00b0"
+    else:
+        hl_line = "H --\u00b0 L --\u00b0"
 
     aqi = fetch_aqi()
     if aqi is not None:
@@ -194,9 +230,10 @@ def build_content():
     # Combine date + time into one compact top line.
     line1 = f"{date_line} {time_line}"
     return {
-        "lines": [line1, weather_line, aqi_line],
+        "lines": [line1, weather_line, hl_line, aqi_line],
         "icon": icon,
         "is_day": bool(is_day),
+        "aqi": aqi,
     }
 
 
@@ -330,8 +367,12 @@ def render(content):
         except Exception:
             return ImageFont.load_default()
 
-    # Smaller fonts than before so three lines fit the left 2/3 comfortably.
-    font = load_font(16)
+    # Font sized so four lines fit the left column comfortably. Scale down a
+    # touch on shorter panels so nothing gets clipped.
+    lines = content["lines"]
+    font_size = 14 if height <= 104 else 15
+    font = load_font(font_size)
+    small_font = load_font(11)
 
     # ---- Columns -----------------------------------------------------------
     text_w = int(width * TEXT_FRACTION)
@@ -341,8 +382,7 @@ def render(content):
         bbox = draw.textbbox((0, 0), s, font=font)
         return bbox[3] - bbox[1]
 
-    lines = content["lines"]
-    margin = 3
+    margin = 2
     usable = height - 2 * margin
     slot = usable / len(lines)
     for i, line in enumerate(lines):
@@ -353,15 +393,30 @@ def render(content):
     # Thin divider between text and icon columns.
     draw.line((text_w - 2, 6, text_w - 2, height - 6), fill=BLACK, width=1)
 
-    # ---- Icon --------------------------------------------------------------
+    # ---- Icon (upper part of the right column) -----------------------------
+    # Reserve a strip at the bottom of the icon column for the AQI dot.
+    dot_strip = 26
     draw_icon(
         draw,
-        (icon_region[0] + 4, icon_region[1] + 4,
-         icon_region[2] - 4, icon_region[3] - 4),
+        (icon_region[0] + 4, icon_region[1] + 2,
+         icon_region[2] - 4, icon_region[3] - dot_strip),
         content["icon"],
         content["is_day"],
         BLACK, WHITE, ACCENT,
     )
+
+    # ---- AQI colour dot (bottom of the right column) -----------------------
+    aqi = content.get("aqi")
+    fill, outline = aqi_dot_colour(aqi, BLACK, WHITE, ACCENT)
+    icon_cx = (icon_region[0] + icon_region[2]) // 2
+    dot_cy = height - dot_strip // 2 - 1
+    rr = 6
+    draw.ellipse(
+        (icon_cx - rr - 14, dot_cy - rr, icon_cx - 14 + rr, dot_cy + rr),
+        fill=fill, outline=outline, width=2,
+    )
+    # "AQI" caption to the right of the dot.
+    draw.text((icon_cx - 2, dot_cy - 7), "AQI", BLACK, font=small_font)
 
     inky.set_image(img)
     inky.set_border(WHITE)
