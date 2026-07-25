@@ -1,14 +1,24 @@
 # Inky pHAT Weather Dashboard
 
-A tiny weather dashboard for a **Pimoroni Inky pHAT 2.13" (212×104)** driven by a
-**Raspberry Pi Zero W** running **Raspberry Pi OS "Trixie" (headless)**.
+A tiny weather dashboard for a **Pimoroni Inky pHAT** (4-colour
+red/yellow/black/white, 250×122) driven by a **Raspberry Pi Zero W** running
+**Raspberry Pi OS "Trixie" (headless)**.
 
-It shows three lines and refreshes **every hour at :15**, pausing overnight
-**between 11:00 PM and 5:00 AM**:
+It refreshes **every hour at :15**, pausing overnight **between 11:00 PM and
+5:00 AM**. The screen is split into two columns:
 
-1. Date and time
-2. Current weather conditions for **Mt. Airy, Maryland**
+**Left ~2/3 — three text lines:**
+
+1. Date and time (24-hour clock)
+2. Current weather conditions + temperature for **Mt. Airy, Maryland**
 3. Air Quality Index (US AQI)
+
+**Right ~1/3 — a weather-state icon**, drawn programmatically (no image files):
+
+- **Sun** for daytime clear, **crescent moon** for night
+- Cloud / partly-cloudy / rain / snow / lightning / fog overlays based on
+  conditions, using the board's accent colour (red/yellow) for the sun and
+  precipitation accents
 
 Weather and air-quality data come from the free [Open-Meteo](https://open-meteo.com)
 APIs — **no API key required**.
@@ -18,7 +28,9 @@ APIs — **no API key required**.
 ## Hardware / OS assumptions
 
 - Raspberry Pi Zero W (v1.1) — ARMv6, 32-bit
-- Pimoroni Inky pHAT 2.13" (212×104)
+- Pimoroni Inky pHAT — works with the 4-colour red/yellow/black/white board
+  (250×122) and older 3-colour boards; the layout adapts to the detected
+  resolution
 - Raspberry Pi OS "Trixie", **headless (Lite)**, with SSH enabled
 
 > **Why the install script uses `apt` for numpy/Pillow:** On Trixie, `pip`
@@ -115,7 +127,8 @@ Edit the constants near the top of `dashboard.py`:
 |---|---|
 | `LATITUDE` / `LONGITUDE` | Location (defaults to Mt. Airy, MD) |
 | `TIMEZONE` | Local timezone for timestamps/data |
-| `INKY_COLOUR` | `"black"`, `"red"`, or `"yellow"` — match your board |
+| `INKY_COLOUR` | Fallback if EEPROM auto-detect fails: `"red"`, `"yellow"`, or `"black"`. Auto-detect handles the 4-colour board automatically |
+| `TEXT_FRACTION` | Fraction of width used by the text column (default 2/3) |
 | `QUIET_START_HOUR` / `QUIET_END_HOUR` | Overnight pause window |
 
 After editing, apply changes with a test run:
