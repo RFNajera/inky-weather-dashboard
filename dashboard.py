@@ -124,10 +124,12 @@ def aqi_label(aqi):
 
 def aqi_dot_colour(aqi, black, white, accent):
     """
-    Map AQI to one of the panel's colours (limited palette):
-      Good        -> white disc with black outline (clean/low)
-      Moderate    -> accent (yellow on a yellow board, red otherwise)
-      Unhealthy+  -> accent, filled solid
+    Map AQI to the panel's limited palette (white / black / one accent).
+    The accent index is red OR yellow depending on the board, so it is
+    reserved for genuinely unhealthy air to keep its meaning clear:
+      Good        -> hollow (white fill, black ring)
+      Moderate    -> black filled (present but not alarming)
+      Unhealthy+  -> accent filled with black ring (the alarm colour)
     Returns (fill, outline).
     """
     if aqi is None:
@@ -135,8 +137,8 @@ def aqi_dot_colour(aqi, black, white, accent):
     if aqi <= 50:
         return white, black          # Good: hollow
     if aqi <= 100:
-        return accent, accent        # Moderate: filled accent
-    return accent, black             # Unhealthy and worse: filled accent + ring
+        return black, black          # Moderate: neutral, filled black
+    return accent, black             # Unhealthy and worse: accent + ring
 
 
 # ----------------------------------------------------------------------------
